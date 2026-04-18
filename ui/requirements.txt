@@ -1,0 +1,10 @@
+streamlit>=1.40.0
+requests>=2.31.0
+mcp>=1.24.0
+httpx>=0.28.1
+httpx-sse>=0.4.0
+nest-asyncio>=1.6.0
+anyio>=4.5
+openai>=1.30.0
+plotly>=5.22.0
+pandas>=2.0.0

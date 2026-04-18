@@ -1,0 +1,91 @@
+services:
+
+  # ── Internal app database (users + audit logs) ──────────────────────────────
+  app-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       app_db
+      POSTGRES_USER:     app_user
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - app_db_data:/var/lib/postgresql/data
+      - ./auth/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Auth / user-management service ──────────────────────────────────────────
+  auth:
+    build:
+      context: ./auth
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - APP_DB_HOST=app-db
+      - APP_DB_NAME=app_db
+      - APP_DB_USER=app_user
+    networks:
+      - mcp-net
+    depends_on:
+      app-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── MCP tool server ──────────────────────────────────────────────────────────
+  server:
+    build:
+      context: ./server
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    networks:
+      - mcp-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Streamlit UI ─────────────────────────────────────────────────────────────
+  ui:
+    build:
+      context: ./ui
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - MCP_SERVER_URL=http://server:8000/sse
+      - AUTH_SERVICE_URL=http://auth:8001
+    networks:
+      - mcp-net
+    depends_on:
+      server:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  mcp-net:
+    driver: bridge
+
+volumes:
+  app_db_data:
